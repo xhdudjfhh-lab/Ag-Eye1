@@ -1,12 +1,142 @@
 import streamlit as st
 import yfinance as yf
 
-st.set_page_config(page_title="Ag Eye", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Ag Eye", layout="wide", page_icon=None)
 
-st.title("⚡ Ag Eye (에이지스아이)")
-st.caption("대한민국 증시 8대 섹터 AI 인텔리전스")
+# ---------------------------------------------------------
+# 스타일
+# ---------------------------------------------------------
+st.markdown("""
+<style>
+    #MainMenu, footer, header {visibility: hidden;}
 
-# 섹터별 대표 종목 및 티커 (KOSPI=.KS, KOSDAQ=.KQ)
+    .block-container {
+        padding-top: 2rem;
+        max-width: 1100px;
+    }
+
+    .app-title {
+        font-size: 2.1rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #1a1a1a;
+        margin-bottom: 0.1rem;
+    }
+
+    .app-caption {
+        color: #8a8a8a;
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+    }
+
+    /* 눈 아이콘 (컴패니언 큐브 스타일) */
+    .eye-icon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 10px auto;
+        border: 3px solid #c9c9c9;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fafafa;
+    }
+    .eye-icon .ring {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 5px solid var(--ring-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .eye-icon .pupil {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ring-color);
+    }
+    .eye-icon.active {
+        border-color: var(--ring-color);
+        background: #ffffff;
+    }
+    .eye-icon.disabled {
+        opacity: 0.45;
+    }
+
+    .eye-label {
+        text-align: center;
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #333;
+    }
+    .eye-label.disabled {
+        color: #aaaaaa;
+    }
+    .eye-sub {
+        text-align: center;
+        font-size: 0.75rem;
+        color: #b0b0b0;
+        margin-bottom: 1.5rem;
+    }
+
+    .section-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.4rem;
+    }
+
+    div[data-testid="stMetric"] {
+        background: #fafafa;
+        border: 1px solid #ececec;
+        border-radius: 10px;
+        padding: 1rem 1.2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+def render_eye(name: str, color: str, active: bool = False):
+    state_class = "active" if active else "disabled"
+    label_class = "" if active else "disabled"
+    sub = "" if active else "Coming soon"
+    st.markdown(f"""
+        <div class="eye-icon {state_class}" style="--ring-color:{color};">
+            <div class="ring"><div class="pupil"></div></div>
+        </div>
+        <div class="eye-label {label_class}">{name}</div>
+        <div class="eye-sub">{sub}</div>
+    """, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------
+# 제목
+# ---------------------------------------------------------
+st.markdown('<div class="app-title">Ag Eye</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-caption">대한민국 증시 8대 섹터 AI 인텔리전스</div>', unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# 마켓 네비게이션 (Fe - Ag - Au)
+# ---------------------------------------------------------
+nav_left, nav_center, nav_right = st.columns([1, 1, 1])
+
+with nav_left:
+    render_eye("Fe Eye", "#5a5a5a", active=False)
+
+with nav_center:
+    render_eye("Ag Eye", "#8a8a8a", active=True)
+
+with nav_right:
+    render_eye("Au Eye", "#c9a13b", active=False)
+
+st.divider()
+
+# ---------------------------------------------------------
+# 섹터 데이터
+# ---------------------------------------------------------
 data = {
     "반도체": {"ticker": "005930.KS", "top_pick": "삼성전자", "ai_score": 85,
               "ai_summary": ["HBM 수요 증가 지속", "외국인 순매수세 유입", "3분기 실적 개선 기대"]},
@@ -29,9 +159,8 @@ data = {
 sectors = list(data.keys())
 
 
-@st.cache_data(ttl=300)  # 5분 캐싱: API 과호출 방지
+@st.cache_data(ttl=300)
 def get_stock_info(ticker: str):
-    """yfinance로 실시간 현재가, 전일대비 등락률을 가져온다."""
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="5d")
@@ -48,9 +177,9 @@ def get_stock_info(ticker: str):
         return None
 
 
-selected_sector = st.radio("섹터 선택", sectors, horizontal=True)
+selected_sector = st.radio("섹터 선택", sectors, horizontal=True, label_visibility="collapsed")
 
-st.divider()
+st.write("")
 
 sec_data = data[selected_sector]
 stock_info = get_stock_info(sec_data["ticker"])
@@ -58,7 +187,7 @@ stock_info = get_stock_info(sec_data["ticker"])
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader(f"📈 {selected_sector} 섹터 시세")
+    st.markdown(f'<div class="section-label">{selected_sector} 섹터 시세</div>', unsafe_allow_html=True)
 
     if stock_info is not None:
         change = stock_info["change_percent"]
@@ -67,21 +196,20 @@ with col1:
             value=f"{stock_info['price']:,}원",
             delta=f"{change}%",
         )
-        st.success("✅ 실시간 데이터 연동 중 (yfinance)")
     else:
-        st.warning("⚠️ 실시간 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+        st.warning("실시간 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
 
 with col2:
-    st.subheader("🤖 AI 종합 분석")
+    st.markdown('<div class="section-label">AI 종합 분석</div>', unsafe_allow_html=True)
     score = sec_data.get("ai_score", 0)
-    st.success(f"섹터 호재 점수: **+{score}점** (강력 호재)")
+    st.success(f"섹터 호재 점수 **+{score}점**")
 
-    st.write("---")
-    st.write("🎯 **AI 추천 종목 (Pick):**", sec_data.get("top_pick", "-"))
+    st.write("")
+    st.markdown(f"**AI 추천 종목**  \n{sec_data.get('top_pick', '-')}")
 
-    st.write("📰 **실시간 AI 뉴스 요약:**")
+    st.write("")
+    st.markdown("**AI 뉴스 요약**")
     for sum_text in sec_data.get("ai_summary", []):
         st.write(f"- {sum_text}")
 
 st.caption("데이터 출처: Yahoo Finance (yfinance) · 5분 캐싱 적용")
-
