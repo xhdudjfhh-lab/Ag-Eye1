@@ -199,6 +199,76 @@ def get_stock_info(ticker: str):
         return None
 
 
+# ---------------------------------------------------------
+# 뉴스 크롤링 (네이버 금융) + AI 요약/점수화 (Claude API)
+# ---------------------------------------------------------
+import requests
+from bs4 import BeautifulSoup
+import json
+
+
+def crawl_naver_news(ticker: str, max_items: int = 5):
+    """네이버 금융 종목 뉴스 페이지에서 최근 뉴스 제목을 가져온다."""
+    code = ticker.split(".")[0]  # 005930.KS -> 005930
+    url = "https://finance.naver.com/item/news_news.naver"
+    try:
+        resp = requests.get(
+            url,
+            params={"code": code, "page": 1},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            timeout=5,
+        )
+        resp.encoding = "euc-kr"
+        soup = BeautifulSoup(resp.text, "html.parser")
+        titles = []
+        for a in soup.select("td.title a"):
+            t = a.get_text(strip=True)
+            if t and t not in titles:
+                titles.append(t)
+            if len(titles) >= max_items:
+                break
+        return titles
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=1800)  # 30분 캐싱: API 비용 절약
+def ai_analyze_sector(sector: str, top_pick: str, ticker: str):
+    """뉴스를 크롤링해 Claude API로 호재/악재 점수와 요약을 생성한다. 실패 시 None 반환."""
+    news_titles = crawl_naver_news(ticker)
+    if not news_titles:
+        return None
+
+    try:
+        from anthropic import Anthropic
+
+        client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        news_block = "\n".join(f"- {t}" for t in news_titles)
+        prompt = f"""다음은 '{top_pick}' ({sector} 섹터)의 최근 뉴스 제목 목록입니다.
+
+{news_block}
+
+위 뉴스를 바탕으로 다음을 수행하세요:
+1. 이 종목/섹터에 대한 호재-악재 점수를 -100(매우 악재)부터 +100(매우 호재) 사이의 정수로 산정하세요.
+2. 핵심 내용을 한국어 짧은 불릿 3개로 요약하세요 (각 15자 내외).
+
+다른 설명 없이 아래 JSON 형식으로만 응답하세요:
+{{"score": 정수, "summary": ["요약1", "요약2", "요약3"]}}"""
+
+        response = client.messages.create(
+            model="claude-haiku-5-5",
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(raw)
+        parsed["news_titles"] = news_titles
+        return parsed
+    except Exception:
+        return None
+
+
 selected_sector = st.radio("섹터 선택", sectors, horizontal=True, label_visibility="collapsed")
 
 st.write("")
@@ -223,15 +293,35 @@ with col1:
 
 with col2:
     st.markdown('<div class="section-label">AI 종합 분석</div>', unsafe_allow_html=True)
-    score = sec_data.get("ai_score", 0)
-    st.success(f"섹터 호재 점수 **+{score}점**")
+
+    analysis = ai_analyze_sector(selected_sector, sec_data["top_pick"], sec_data["ticker"])
+
+    if analysis is not None:
+        score = analysis["score"]
+        summary_lines = analysis["summary"]
+        is_live = True
+    else:
+        # 실시간 크롤링/AI 분석 실패 시 샘플 데이터로 대체
+        score = sec_data.get("ai_score", 0)
+        summary_lines = sec_data.get("ai_summary", [])
+        is_live = False
+
+    if score >= 30:
+        st.success(f"섹터 호재 점수 **{score:+d}점**")
+    elif score <= -30:
+        st.error(f"섹터 호재 점수 **{score:+d}점**")
+    else:
+        st.warning(f"섹터 호재 점수 **{score:+d}점**")
+
+    if not is_live:
+        st.caption("실시간 분석 실패 — 참고용 샘플 데이터 표시 중")
 
     st.write("")
     st.markdown(f"**AI 추천 종목**  \n{sec_data.get('top_pick', '-')}")
 
     st.write("")
     st.markdown("**AI 뉴스 요약**")
-    for sum_text in sec_data.get("ai_summary", []):
+    for sum_text in summary_lines:
         st.write(f"- {sum_text}")
 
-st.caption("데이터 출처: Yahoo Finance (yfinance) · 5분 캐싱 적용")
+st.caption("데이터 출처: Yahoo Finance (yfinance), Naver Finance 뉴스 · AI 분석: Claude · 캐싱 적용")
