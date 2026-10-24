@@ -2,3 +2,5 @@ streamlit
 yfinance
 beautifulsoup4
 lxml
+requests
+anthropic
